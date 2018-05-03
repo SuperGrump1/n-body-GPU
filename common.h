@@ -29,6 +29,8 @@ typedef struct
   double vy;
   double ax;
   double ay;
+  int binx;
+  int biny;
 } particle_t;
 
 typedef std::vector<particle_t> bin_t;

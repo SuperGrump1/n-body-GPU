@@ -5,7 +5,8 @@
 #include <cuda.h>
 #include "common.h"
 
-#define NUM_THREADS 256
+#define NUM_THREADS 512
+//#define NUM_THREADS 256
 
 extern double size;
 //
@@ -36,11 +37,17 @@ __global__ void compute_forces_gpu(particle_t * particles, int n)
 {
   // Get thread (particle) ID
   int tid = threadIdx.x + blockIdx.x * blockDim.x;
+  double radius;
   if(tid >= n) return;
 
   particles[tid].ax = particles[tid].ay = 0;
-  for(int j = 0 ; j < n ; j++)
-    apply_force_gpu(particles[tid], particles[j]);
+  for(int j = 0 ; j < n ; j++) {
+    radius=(sqrt(double(
+      (particles[tid].binx - particles[j].binx) * (particles[tid].binx - particles[j].binx) +
+        (particles[tid].biny - particles[j].biny) * (particles[tid].biny - particles[j].biny) ) ) );
+    if(radius < 2.0)
+      apply_force_gpu(particles[tid], particles[j]);
+  }
 
 }
 
@@ -77,7 +84,20 @@ __global__ void move_gpu (particle_t * particles, int n, double size)
 
 }
 
+__global__ void compute_bins_gpu(particle_t * particles, int n)
+{
+  int tid = threadIdx.x + blockIdx.x * blockDim.x;
+  int bid = blockDim.x * gridDim.x;
+  if(tid >=n) return;
 
+  double gridSize = sqrt(n * 0.0005);
+  double binSize = 0.02;
+
+  for (int i = tid; i<n; i += bid) {
+    particles[i].binx = int(particles[i].x/binSize);
+    particles[i].biny = int(particles[i].y/binSize);
+  }
+}
 
 int main( int argc, char **argv )
 {    
@@ -125,11 +145,18 @@ int main( int argc, char **argv )
 
     for( int step = 0; step < NSTEPS; step++ )
     {
+	int blks = (n + NUM_THREADS - 1) / NUM_THREADS;
+
+	//
+	// compute bins
+	//
+
+	compute_bins_gpu <<< blks, NUM_THREADS >>> (d_particles, n);
+
         //
         //  compute forces
         //
 
-	int blks = (n + NUM_THREADS - 1) / NUM_THREADS;
 	compute_forces_gpu <<< blks, NUM_THREADS >>> (d_particles, n);
         
         //
